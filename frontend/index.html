@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ToDo List + Email</title>
+</head>
+<body>
+
+<h1>ToDo List (Email version)</h1>
+
+<input id="title" placeholder="Title">
+<input id="desc" placeholder="Description">
+<input id="email" placeholder="Email">
+
+<button onclick="addTask()">Add</button>
+<button onclick="sendEmail()">Send Email</button>
+
+<br><br>
+
+<button onclick="checkIMAP()">Check IMAP</button>
+<button onclick="checkPOP3()">Check POP3</button>
+
+<p id="mailInfo"></p>
+
+<ul id="list"></ul>
+
+<script>
+
+const API = "http://localhost:5000/tasks";
+
+function loadTasks() {
+    fetch(API)
+        .then(r => r.json())
+        .then(data => {
+            let list = document.getElementById("list");
+            list.innerHTML = "";
+
+            data.forEach(t => {
+                list.innerHTML += `
+                    <li>
+                        ${t.title} - ${t.description}
+                        <button onclick="deleteTask(${t.id})">X</button>
+                        <button onclick="sendTask(${t.id}, '${t.title}', '${t.description}')">Send</button>
+                    </li>
+                `;
+            });
+        });
+}
+
+function addTask() {
+    fetch(API, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+            title: document.getElementById("title").value,
+            description: document.getElementById("desc").value
+        })
+    }).then(loadTasks);
+}
+
+function deleteTask(id) {
+    fetch(API + "/" + id, { method: "DELETE" })
+        .then(loadTasks);
+}
+
+// отправка текущих полей
+function sendEmail() {
+    fetch("http://localhost:5000/send-email", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+            title: document.getElementById("title").value,
+            description: document.getElementById("desc").value,
+            to: document.getElementById("email").value
+        })
+    })
+    .then(r => r.json())
+    .then(d => alert(JSON.stringify(d)));
+}
+
+// отправка конкретной задачи
+function sendTask(id, title, desc) {
+    const email = document.getElementById("email").value;
+
+    fetch("http://localhost:5000/send-email", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+            title: title,
+            description: desc,
+            to: email
+        })
+    })
+    .then(r => r.json())
+    .then(d => alert("Task sent!"));
+}
+
+// IMAP
+function checkIMAP() {
+    fetch("http://localhost:5000/check-imap")
+        .then(r => r.json())
+        .then(d => {
+            document.getElementById("mailInfo").innerText =
+                "IMAP emails: " + JSON.stringify(d);
+        });
+}
+
+// POP3
+function checkPOP3() {
+    fetch("http://localhost:5000/check-pop3")
+        .then(r => r.json())
+        .then(d => {
+            document.getElementById("mailInfo").innerText =
+                "POP3 emails: " + JSON.stringify(d);
+        });
+}
+
+loadTasks();
+
+</script>
+
+</body>
+</html>
