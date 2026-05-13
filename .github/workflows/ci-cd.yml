@@ -13,7 +13,7 @@ jobs:
 
     steps:
 
-    # ---------------- CLONE REPO ----------------
+    # ---------------- CLONE REPO -----------------
 
     - name: Checkout repository
       uses: actions/checkout@v4
