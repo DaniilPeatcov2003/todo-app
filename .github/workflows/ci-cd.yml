@@ -1,0 +1,111 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+
+  build-test-deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # ---------------- CLONE REPO ----------------
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # ---------------- DOCKER LOGIN ----------------
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    # ---------------- CREATE NETWORK ----------------
+
+    - name: Create Docker network
+      run: docker network create todo-net
+
+    # ---------------- BUILD DB ----------------
+
+    - name: Build DB image
+      run: docker build -t todo-db ./db
+
+    # ---------------- RUN DB ----------------
+
+    - name: Run DB container
+      run: |
+        docker run -d \
+        --name db \
+        --network todo-net \
+        todo-db
+
+    # ---------------- BUILD BACKEND ----------------
+
+    - name: Build backend image
+      run: docker build -t todo-back ./backend
+
+    # ---------------- RUN BACKEND ----------------
+
+    - name: Run backend container
+      run: |
+        docker run -d \
+        --name backend \
+        --network todo-net \
+        -p 5000:5000 \
+        todo-back
+
+    # ---------------- BUILD FRONTEND ----------------
+
+    - name: Build frontend image
+      run: docker build -t todo-front ./frontend
+
+    # ---------------- RUN FRONTEND ----------------
+
+    - name: Run frontend container
+      run: |
+        docker run -d \
+        --name frontend \
+        --network todo-net \
+        -p 8080:80 \
+        todo-front
+
+    # ---------------- WAIT ----------------
+
+    - name: Wait for containers
+      run: sleep 20
+
+    # ---------------- CURL TESTS ----------------
+
+    - name: Test backend API
+      run: |
+        curl http://localhost:5000/tasks
+
+    # ---------------- PUSH IMAGES ----------------
+
+    - name: Tag backend image
+      run: docker tag todo-back ${{ secrets.DOCKER_USERNAME }}/todo-back:latest
+
+    - name: Push backend image
+      run: docker push ${{ secrets.DOCKER_USERNAME }}/todo-back:latest
+
+    - name: Tag frontend image
+      run: docker tag todo-front ${{ secrets.DOCKER_USERNAME }}/todo-front:latest
+
+    - name: Push frontend image
+      run: docker push ${{ secrets.DOCKER_USERNAME }}/todo-front:latest
+
+    # ---------------- CLEANUP ----------------
+
+    - name: Stop containers
+      run: |
+        docker stop frontend backend db
+
+    - name: Remove containers
+      run: |
+        docker rm frontend backend db

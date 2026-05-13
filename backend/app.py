@@ -1,5 +1,6 @@
 ﻿from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit
 import mysql.connector
 
 import smtplib
@@ -7,8 +8,17 @@ import imaplib
 import poplib
 from email.mime.text import MIMEText
 
+# ---------------- FLASK ----------------
+
 app = Flask(__name__)
+
+# Разрешаем frontend обращаться к backend
 CORS(app)
+
+# WebSocket сервер
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# ---------------- DATABASE ----------------
 
 db = mysql.connector.connect(
     host="db",
@@ -19,47 +29,74 @@ db = mysql.connector.connect(
 
 cursor = db.cursor(dictionary=True)
 
-# GET all tasks
+# ---------------- SOCKET CONNECT ----------------
+
+@socketio.on("connect")
+def connect():
+    print("Client connected")
+
+# ---------------- GET ALL TASKS ----------------
+
 @app.route("/tasks", methods=["GET"])
 def get_tasks():
     cursor.execute("SELECT * FROM tasks")
     return jsonify(cursor.fetchall())
 
-# GET task by id
+# ---------------- GET TASK BY ID ----------------
+
 @app.route("/tasks/<int:id>", methods=["GET"])
 def get_task(id):
     cursor.execute("SELECT * FROM tasks WHERE id=%s", (id,))
     return jsonify(cursor.fetchone())
 
-# CREATE task
+# ---------------- CREATE TASK ----------------
+
 @app.route("/tasks", methods=["POST"])
 def add_task():
     data = request.json
+
     cursor.execute(
         "INSERT INTO tasks (title, description) VALUES (%s, %s)",
         (data["title"], data["description"])
     )
+
     db.commit()
+
+    # Уведомляем всех клиентов
+    socketio.emit("task_updated")
+
     return jsonify({"message": "created"})
 
-# UPDATE task
+# ---------------- UPDATE TASK ----------------
+
 @app.route("/tasks/<int:id>", methods=["PUT"])
 def update_task(id):
     data = request.json
+
     cursor.execute(
         "UPDATE tasks SET title=%s, description=%s, completed=%s WHERE id=%s",
         (data["title"], data["description"], data["completed"], id)
     )
+
     db.commit()
+
+    # Уведомляем всех клиентов
+    socketio.emit("task_updated")
+
     return jsonify({"message": "updated"})
 
-# DELETE task
+# ---------------- DELETE TASK ----------------
+
 @app.route("/tasks/<int:id>", methods=["DELETE"])
 def delete_task(id):
     cursor.execute("DELETE FROM tasks WHERE id=%s", (id,))
-    db.commit()
-    return jsonify({"message": "deleted"})
 
+    db.commit()
+
+    # Уведомляем всех клиентов
+    socketio.emit("task_updated")
+
+    return jsonify({"message": "deleted"})
 
 # ---------------- SMTP (SEND EMAIL) ----------------
 
@@ -68,25 +105,41 @@ def send_email():
     data = request.json
 
     sender = "fosh1551342@gmail.com"
-    password = "rcdlfxqedswxrbqb"   # ⚠️ App Password (НЕ обычный пароль)
+
+    # App Password Gmail
+    password = "rcdlfxqedswxrbqb"
+
     receiver = data["to"]
 
-    msg = MIMEText(f"Task: {data['title']}\nDescription: {data['description']}")
+    # Формируем письмо
+    msg = MIMEText(
+        f"Task: {data['title']}\nDescription: {data['description']}"
+    )
+
     msg["Subject"] = "ToDo Task"
     msg["From"] = sender
     msg["To"] = receiver
 
     try:
+        # SMTP сервер Gmail
         server = smtplib.SMTP("smtp.gmail.com", 587)
+
+        # TLS шифрование
         server.starttls()
+
+        # Авторизация
         server.login(sender, password)
+
+        # Отправка письма
         server.send_message(msg)
+
+        # Закрытие соединения
         server.quit()
 
         return jsonify({"message": "Email sent"})
+
     except Exception as e:
         return jsonify({"error": str(e)})
-
 
 # ---------------- IMAP ----------------
 
@@ -94,16 +147,22 @@ def send_email():
 def check_imap():
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
-        mail.login("fosh1551342@gmail.com", "rcdlfxqedswxrbqb")
+
+        mail.login(
+            "fosh1551342@gmail.com",
+            "rcdlfxqedswxrbqb"
+        )
+
         mail.select("inbox")
 
         result, data = mail.search(None, "ALL")
+
         ids = data[0].split()
 
         return jsonify({"imap_emails": len(ids)})
+
     except Exception as e:
         return jsonify({"error": str(e)})
-
 
 # ---------------- POP3 ----------------
 
@@ -111,14 +170,18 @@ def check_imap():
 def check_pop3():
     try:
         mail = poplib.POP3_SSL("pop.gmail.com", 995)
+
         mail.user("fosh1551342@gmail.com")
         mail.pass_("rcdlfxqedswxrbqb")
 
         count = len(mail.list()[1])
 
         return jsonify({"pop3_emails": count})
+
     except Exception as e:
         return jsonify({"error": str(e)})
 
+# ---------------- START SERVER ----------------
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    socketio.run(app, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)
