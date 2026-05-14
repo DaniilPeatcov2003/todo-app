@@ -8,7 +8,7 @@ import imaplib
 import poplib
 from email.mime.text import MIMEText
 
-# ---------------- FLASK ----------------
+# ---------------- FLASK(flask) ----------------
 
 app = Flask(__name__)
 
